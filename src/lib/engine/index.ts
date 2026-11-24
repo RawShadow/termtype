@@ -1,5 +1,5 @@
 export * from "./types";
+export * from "./config";
 export * from "./stats";
-export * from "./words";
 export * from "./reducer";
 export * from "./results";

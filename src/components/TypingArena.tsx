@@ -1,38 +1,87 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { createInitialState, engineReducer, getResult } from "@/lib/engine";
+import { createInitialState, engineReducer, getResult, type TestConfig } from "@/lib/engine";
+import { runIdOf, toGuestRun } from "@/lib/history/guestRuns";
+import { recordGuestRun } from "@/lib/history/guestRunsStore";
 import { randomSeed } from "@/lib/random";
+import { saveConfig } from "@/lib/settings";
 import { ArenaFrame } from "./ArenaFrame";
-import { FinishedReadout } from "./FinishedReadout";
+import { CommandPalette } from "./CommandPalette";
 import { LiveCounter } from "./LiveCounter";
+import { ResultsView } from "./results/ResultsView";
 import { WordsViewport } from "./WordsViewport";
 
 /** How long after the last keystroke the caret goes back to blinking. */
 const TYPING_IDLE_MS = 500;
 const TICK_INTERVAL_MS = 100;
 const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "AltGraph"]);
+const CONTROL_SELECTOR = "button, a, input, textarea, select, summary";
 
 type KeyLike = Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "metaKey" | "preventDefault">;
 
-export function TypingArena({ initialSeed }: { initialSeed: number }) {
-  const [state, dispatch] = useReducer(engineReducer, initialSeed, (seed) =>
-    createInitialState({ seed }),
+interface TypingArenaProps {
+  initialSeed: number;
+  initialConfig: TestConfig;
+}
+
+export function TypingArena({ initialSeed, initialConfig }: TypingArenaProps) {
+  const [state, dispatch] = useReducer(
+    engineReducer,
+    { seed: initialSeed, config: initialConfig },
+    createInitialState,
   );
   const [focusMode, setFocusMode] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [focused, setFocused] = useState(true);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const tabArmed = useRef(false);
+  const paletteOpenRef = useRef(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const savedRunId = useRef<string | null>(null);
 
-  const restart = useCallback(() => {
+  const resetUi = useCallback(() => {
     tabArmed.current = false;
     clearTimeout(typingTimer.current);
     setIsTyping(false);
     setFocusMode(false);
-    dispatch({ type: "RESET", seed: randomSeed() });
+    containerRef.current?.focus();
+  }, []);
+
+  /** New text; optionally with a new config. */
+  const restart = useCallback(
+    (config?: TestConfig) => {
+      dispatch({ type: "RESET", seed: randomSeed(), config });
+      resetUi();
+    },
+    [resetUi],
+  );
+
+  /** Same text, same settings. */
+  const repeat = useCallback(() => {
+    dispatch({ type: "REPEAT" });
+    resetUi();
+  }, [resetUi]);
+
+  const applyConfig = useCallback(
+    (config: TestConfig) => {
+      saveConfig(config);
+      restart(config);
+    },
+    [restart],
+  );
+
+  const openPalette = useCallback(() => {
+    paletteOpenRef.current = true;
+    tabArmed.current = false;
+    setPaletteOpen(true);
+  }, []);
+
+  const closePalette = useCallback(() => {
+    paletteOpenRef.current = false;
+    setPaletteOpen(false);
     containerRef.current?.focus();
   }, []);
 
@@ -43,25 +92,33 @@ export function TypingArena({ initialSeed }: { initialSeed: number }) {
     typingTimer.current = setTimeout(() => setIsTyping(false), TYPING_IDLE_MS);
   }, []);
 
-  /** Single keystroke handler: maps keys to engine actions, nothing else. */
+  /**
+   * Single keystroke handler: maps keys to engine actions, nothing else.
+   * `fromControl` is set for keys pressed on a button inside the arena, which
+   * keep their native behavior except for the Tab+Enter / Esc shortcuts.
+   */
   const handleKey = useCallback(
-    (e: KeyLike) => {
+    (e: KeyLike, fromControl = false) => {
       if (MODIFIER_KEYS.has(e.key)) return;
       const now = performance.now();
 
+      if (e.key === "Escape") {
+        e.preventDefault();
+        openPalette();
+        return;
+      }
       if (e.key === "Tab") {
         e.preventDefault();
         tabArmed.current = true;
         return;
       }
-      if (e.key === "Enter") {
-        if (tabArmed.current) {
-          e.preventDefault();
-          restart();
-        }
+      if (e.key === "Enter" && tabArmed.current) {
+        e.preventDefault();
+        restart();
         return;
       }
       tabArmed.current = false;
+      if (fromControl || e.key === "Enter") return;
 
       if (e.key === "Backspace") {
         e.preventDefault();
@@ -82,7 +139,7 @@ export function TypingArena({ initialSeed }: { initialSeed: number }) {
         markTyping();
       }
     },
-    [restart, markTyping],
+    [restart, markTyping, openPalette],
   );
 
   // Clock: the only timer, and it only runs while a test is in progress.
@@ -94,6 +151,15 @@ export function TypingArena({ initialSeed }: { initialSeed: number }) {
     );
     return () => clearInterval(id);
   }, [state.status]);
+
+  // Save each finished test to the guest history exactly once.
+  useEffect(() => {
+    if (state.status !== "finished") return;
+    const id = runIdOf(state);
+    if (savedRunId.current === id) return;
+    savedRunId.current = id;
+    recordGuestRun(toGuestRun(state, getResult(state), Date.now()));
+  }, [state]);
 
   // Mount: grab focus, leave focus mode on real mouse movement, and route
   // keystrokes back to the typing area if focus wandered off.
@@ -107,8 +173,11 @@ export function TypingArena({ initialSeed }: { initialSeed: number }) {
       if (moved) setFocusMode(false);
     };
     const onWindowKeyDown = (e: KeyboardEvent) => {
+      if (paletteOpenRef.current) return;
       const el = containerRef.current;
-      if (!el || document.activeElement === el || MODIFIER_KEYS.has(e.key)) return;
+      if (!el || el.contains(document.activeElement) || MODIFIER_KEYS.has(e.key)) return;
+      const onControl = e.target instanceof Element && e.target.closest(CONTROL_SELECTOR) !== null;
+      if (onControl && e.key !== "Tab" && e.key !== "Escape") return;
       el.focus();
       handleKey(e);
     };
@@ -124,40 +193,73 @@ export function TypingArena({ initialSeed }: { initialSeed: number }) {
 
   const running = state.status === "running";
   const finished = state.status === "finished";
+  const counter = !running
+    ? null
+    : state.durationSec !== null
+      ? String(state.durationSec - state.snapshots.length)
+      : `${state.wordIndex}/${state.words.length}`;
 
   return (
-    <ArenaFrame dimmed={focusMode && running} onReset={restart}>
-      <div
-        ref={containerRef}
-        tabIndex={0}
-        aria-label="Typing test. Start typing to begin; press tab then enter to restart."
-        data-testid="typing-area"
-        data-status={state.status}
-        onKeyDown={(e) => handleKey(e)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        className="relative cursor-default outline-none"
+    <>
+      <ArenaFrame
+        dimmed={focusMode && running && !paletteOpen}
+        onReset={() => restart()}
+        config={state.config}
+        onConfigChange={applyConfig}
       >
-        <LiveCounter running={running} remaining={state.durationSec - state.snapshots.length} />
-        {finished ? (
-          <FinishedReadout result={getResult(state)} />
-        ) : (
-          <WordsViewport
-            words={state.words}
-            wordIndex={state.wordIndex}
-            blinking={!isTyping}
-            blurred={!focused}
-          />
-        )}
-        {!focused && !finished && (
-          <div
-            data-testid="focus-hint"
-            className="absolute inset-0 flex items-center justify-center text-sm text-text-muted"
-          >
-            click here or press any key to focus
-          </div>
-        )}
-      </div>
-    </ArenaFrame>
+        <div
+          ref={containerRef}
+          tabIndex={0}
+          aria-label="Typing test. Start typing to begin; tab then enter restarts, escape opens the command palette."
+          data-testid="typing-area"
+          data-status={state.status}
+          data-mode={state.config.mode}
+          onKeyDown={(e) => handleKey(e, e.target !== e.currentTarget)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          className="relative cursor-default outline-none"
+        >
+          {finished ? (
+            <ResultsView state={state} onNext={() => restart()} onRepeat={repeat} />
+          ) : (
+            <>
+              <LiveCounter text={counter} />
+              <WordsViewport
+                words={state.words}
+                wordIndex={state.wordIndex}
+                blinking={!isTyping}
+                blurred={!focused && !paletteOpen}
+              />
+              {!focused && !paletteOpen && (
+                <div
+                  data-testid="focus-hint"
+                  className="absolute inset-0 flex items-center justify-center text-sm text-text-muted"
+                >
+                  click here or press any key to focus
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </ArenaFrame>
+      {paletteOpen && (
+        <CommandPalette
+          config={state.config}
+          onClose={closePalette}
+          onApply={(config) => {
+            closePalette();
+            applyConfig(config);
+          }}
+          onRestart={() => {
+            closePalette();
+            restart();
+          }}
+          onRepeat={() => {
+            closePalette();
+            repeat();
+          }}
+        />
+      )}
+    </>
   );
 }

@@ -1,32 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
+import { area, failOnConsoleErrors, openArena, targets, word } from "./helpers";
 
-let consoleErrors: string[] = [];
-
-test.beforeEach(async ({ page }) => {
-  consoleErrors = [];
-  page.on("console", (msg) => {
-    if (msg.type() === "error") consoleErrors.push(msg.text());
-  });
-  page.on("pageerror", (err) => consoleErrors.push(err.message));
-});
-
-test.afterEach(() => {
-  expect(consoleErrors, "console errors").toEqual([]);
-});
-
-const area = (page: Page) => page.getByTestId("typing-area");
-
-/** Opens `/` and waits until the arena has hydrated and grabbed focus. */
-async function openArena(page: Page) {
-  await page.goto("/");
-  await expect(area(page)).toBeFocused();
-}
-const word = (page: Page, i: number) => page.locator(`[data-word="${i}"]`);
-
-/** Target words currently on screen (valid before any extra chars are typed). */
-async function targets(page: Page): Promise<string[]> {
-  return page.locator("[data-word]").evaluateAll((els) => els.map((el) => el.textContent ?? ""));
-}
+failOnConsoleErrors();
 
 async function caretBox(page: Page) {
   const box = await page.getByTestId("caret").boundingBox();

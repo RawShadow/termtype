@@ -1,6 +1,12 @@
+import type { Quote } from "@/lib/content/quotes";
+import type { Mode, TestConfig } from "./config";
+
 export type CharState = "untyped" | "correct" | "incorrect" | "extra";
 
 export type TestStatus = "idle" | "running" | "finished";
+
+/** Why a strict test ended early: expert = submitted a wrong word, master = any wrong keystroke. */
+export type FailReason = "expert" | "master";
 
 export interface WordEntry {
   /** The word the user is supposed to type. */
@@ -10,7 +16,7 @@ export interface WordEntry {
 }
 
 export interface Snapshot {
-  /** 1-based second of the test this snapshot closes. */
+  /** Second of the test this snapshot closes (fractional for a final partial second). */
   second: number;
   /** Cumulative net WPM at the end of this second. */
   netWpm: number;
@@ -26,10 +32,16 @@ export interface SecondBucket {
 }
 
 export interface EngineState {
+  config: TestConfig;
   words: WordEntry[];
   wordIndex: number;
   status: TestStatus;
-  durationSec: number;
+  /** Test length for timed modes, `null` for words/quote. */
+  durationSec: number | null;
+  /** True for modes whose text keeps growing (time, code). */
+  endless: boolean;
+  quote: Quote | null;
+  failReason: FailReason | null;
   /** `performance.now()`-style timestamp (ms) of the first keystroke. */
   startTime: number | null;
   endTime: number | null;
@@ -41,6 +53,8 @@ export interface EngineState {
   perSecondRaw: number[];
   /** Keystrokes collected for the second currently in progress. */
   bucket: SecondBucket;
+  /** Seed the text was generated from; `REPEAT` rebuilds the same text from it. */
+  startSeed: number;
   /** RNG state used to append more words; keeps the reducer pure. */
   seed: number;
 }
@@ -51,7 +65,8 @@ export type EngineAction =
   | { type: "BACKSPACE" }
   | { type: "CLEAR_WORD" }
   | { type: "TICK"; now: number }
-  | { type: "RESET"; seed: number };
+  | { type: "RESET"; seed: number; config?: TestConfig }
+  | { type: "REPEAT" };
 
 export interface CharBreakdown {
   correct: number;
@@ -68,5 +83,9 @@ export interface TestResult {
   accuracy: number;
   consistency: number;
   chars: CharBreakdown;
+  /** Seconds the score is computed over. */
   durationSec: number;
+  mode: Mode;
+  subMode: string;
+  failReason: FailReason | null;
 }

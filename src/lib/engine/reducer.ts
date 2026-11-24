@@ -1,25 +1,27 @@
+import { initialContent, moreContent } from "@/lib/content";
+import { DEFAULT_CONFIG, durationOf, type TestConfig } from "./config";
 import { countChars, hasError, netWpm, rawWpm } from "./stats";
-import type { EngineAction, EngineState, Snapshot, WordEntry } from "./types";
-import { generateWords } from "./words";
+import type { EngineAction, EngineState, FailReason, Snapshot, WordEntry } from "./types";
 
-export const DEFAULT_DURATION_SEC = 30;
 /** Max characters a user can type past the end of a word. */
 export const MAX_EXTRA_CHARS = 10;
-const INITIAL_WORD_COUNT = 100;
 /** Append more words once fewer than this many remain ahead of the caret. */
 const BUFFER_THRESHOLD = 40;
-const EXTEND_BY = 50;
+/** A final partial second shorter than this is charted but left out of consistency. */
+const MIN_PARTIAL_SECOND = 0.5;
 
-export function createInitialState(options: {
-  seed: number;
-  durationSec?: number;
-}): EngineState {
-  const { words, seed } = generateWords(INITIAL_WORD_COUNT, options.seed);
+export function createInitialState(options: { seed: number; config?: TestConfig }): EngineState {
+  const config = options.config ?? DEFAULT_CONFIG;
+  const content = initialContent(config, options.seed);
   return {
-    words: words.map((target) => ({ target, typed: "" })),
+    config,
+    words: content.words.map((target) => ({ target, typed: "" })),
     wordIndex: 0,
     status: "idle",
-    durationSec: options.durationSec ?? DEFAULT_DURATION_SEC,
+    durationSec: durationOf(config),
+    endless: content.endless,
+    quote: content.quote,
+    failReason: null,
     startTime: null,
     endTime: null,
     totalKeystrokes: 0,
@@ -27,47 +29,79 @@ export function createInitialState(options: {
     snapshots: [],
     perSecondRaw: [],
     bucket: { keystrokes: 0, errors: 0 },
-    seed,
+    startSeed: options.seed,
+    seed: content.seed,
   };
 }
 
+/** Writes snapshots for whole seconds `snapshots.length + 1 .. upTo`. */
+function closeSeconds(state: EngineState, upTo: number): EngineState {
+  if (upTo <= state.snapshots.length) return state;
+  const snapshots: Snapshot[] = [...state.snapshots];
+  const perSecondRaw = [...state.perSecondRaw];
+  let bucket = state.bucket;
+  const { correctWithSpaces } = countChars(state.words, state.wordIndex);
+  for (let second = snapshots.length + 1; second <= upTo; second++) {
+    snapshots.push({
+      second,
+      netWpm: netWpm(correctWithSpaces, second),
+      rawWpm: rawWpm(state.totalKeystrokes, second),
+      errors: bucket.errors,
+    });
+    perSecondRaw.push(rawWpm(bucket.keystrokes, 1));
+    bucket = { keystrokes: 0, errors: 0 };
+  }
+  return { ...state, snapshots, perSecondRaw, bucket };
+}
+
 /**
- * Closes every whole second that has elapsed since the last snapshot and
- * finishes the test once the duration is reached. Returns the same object
- * when nothing changed so React can skip re-rendering.
+ * Closes every whole second since the last snapshot and finishes timed tests
+ * once the duration is reached. Returns the same object when nothing changed
+ * so React can skip re-rendering.
  */
 export function advanceClock(state: EngineState, now: number): EngineState {
   if (state.status !== "running" || state.startTime === null) return state;
   const elapsedSec = (now - state.startTime) / 1000;
-  const completed = Math.floor(Math.min(elapsedSec, state.durationSec));
-  const done = elapsedSec >= state.durationSec;
+  const limit = state.durationSec;
+  const done = limit !== null && elapsedSec >= limit;
+  const completed = Math.floor(limit !== null ? Math.min(elapsedSec, limit) : elapsedSec);
   if (completed <= state.snapshots.length && !done) return state;
 
-  const snapshots: Snapshot[] = [...state.snapshots];
-  const perSecondRaw = [...state.perSecondRaw];
-  let bucket = state.bucket;
-  if (completed > snapshots.length) {
-    const { correctWithSpaces } = countChars(state.words, state.wordIndex);
-    for (let second = snapshots.length + 1; second <= completed; second++) {
-      snapshots.push({
-        second,
-        netWpm: netWpm(correctWithSpaces, second),
-        rawWpm: rawWpm(state.totalKeystrokes, second),
-        errors: bucket.errors,
-      });
-      perSecondRaw.push(rawWpm(bucket.keystrokes, 1));
-      bucket = { keystrokes: 0, errors: 0 };
+  const closed = closeSeconds(state, completed);
+  if (!done) return closed;
+  return { ...closed, status: "finished", endTime: state.startTime + limit * 1000 };
+}
+
+/** Ends the test at `now` (text completed or strict failure), charting the final partial second. */
+function finishAt(state: EngineState, now: number, failReason: FailReason | null): EngineState {
+  const startTime = state.startTime ?? now;
+  const elapsedSec = Math.max(0, (now - startTime) / 1000);
+  const s = closeSeconds(state, Math.floor(elapsedSec));
+  const partial = elapsedSec - s.snapshots.length;
+  let { snapshots, perSecondRaw } = s;
+  if (partial > 0) {
+    const { correctWithSpaces } = countChars(s.words, s.wordIndex);
+    snapshots = [
+      ...snapshots,
+      {
+        second: Math.round(elapsedSec * 100) / 100,
+        netWpm: netWpm(correctWithSpaces, elapsedSec),
+        rawWpm: rawWpm(s.totalKeystrokes, elapsedSec),
+        errors: s.bucket.errors,
+      },
+    ];
+    if (partial >= MIN_PARTIAL_SECOND) {
+      perSecondRaw = [...perSecondRaw, rawWpm(s.bucket.keystrokes, partial)];
     }
   }
-
   return {
-    ...state,
+    ...s,
     snapshots,
     perSecondRaw,
-    bucket,
-    ...(done
-      ? { status: "finished" as const, endTime: state.startTime + state.durationSec * 1000 }
-      : {}),
+    bucket: { keystrokes: 0, errors: 0 },
+    status: "finished",
+    endTime: now,
+    failReason,
   };
 }
 
@@ -78,9 +112,9 @@ function replaceWord(words: WordEntry[], index: number, word: WordEntry): WordEn
 }
 
 function ensureBuffer(state: EngineState): EngineState {
-  if (state.words.length - state.wordIndex >= BUFFER_THRESHOLD) return state;
+  if (!state.endless || state.words.length - state.wordIndex >= BUFFER_THRESHOLD) return state;
   const previous = state.words[state.words.length - 1]?.target;
-  const { words, seed } = generateWords(EXTEND_BY, state.seed, previous);
+  const { words, seed } = moreContent(state.config, state.seed, previous);
   return {
     ...state,
     words: [...state.words, ...words.map((target) => ({ target, typed: "" }))],
@@ -116,7 +150,10 @@ function stepBack(state: EngineState, clear: boolean): EngineState {
 export function engineReducer(state: EngineState, action: EngineAction): EngineState {
   switch (action.type) {
     case "RESET":
-      return createInitialState({ seed: action.seed, durationSec: state.durationSec });
+      return createInitialState({ seed: action.seed, config: action.config ?? state.config });
+
+    case "REPEAT":
+      return createInitialState({ seed: state.startSeed, config: state.config });
 
     case "TICK":
       return advanceClock(state, action.now);
@@ -132,8 +169,18 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
       const word = s.words[s.wordIndex];
       if (word.typed.length >= word.target.length + MAX_EXTRA_CHARS) return s;
       const correct = word.target[word.typed.length] === action.char;
-      const words = replaceWord(s.words, s.wordIndex, { ...word, typed: word.typed + action.char });
-      return ensureBuffer(recordKeystroke({ ...s, words }, correct));
+      const typed = word.typed + action.char;
+      const next = recordKeystroke(
+        { ...s, words: replaceWord(s.words, s.wordIndex, { ...word, typed }) },
+        correct,
+      );
+
+      if (!correct && s.config.strictness === "master") return finishAt(next, action.now, "master");
+      // Fixed-length text ends as soon as the last word is typed exactly.
+      if (!s.endless && s.wordIndex === s.words.length - 1 && typed === word.target) {
+        return finishAt(next, action.now, null);
+      }
+      return ensureBuffer(next);
     }
 
     case "SPACE": {
@@ -144,7 +191,13 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
       const word = s.words[s.wordIndex];
       if (word.typed.length === 0) return s;
       const correct = word.typed === word.target;
-      return ensureBuffer(recordKeystroke({ ...s, wordIndex: s.wordIndex + 1 }, correct));
+      const next = recordKeystroke({ ...s, wordIndex: s.wordIndex + 1 }, correct);
+
+      if (!correct && s.config.strictness !== "normal") {
+        return finishAt(next, action.now, s.config.strictness);
+      }
+      if (!s.endless && next.wordIndex >= s.words.length) return finishAt(next, action.now, null);
+      return ensureBuffer(next);
     }
 
     case "BACKSPACE": {

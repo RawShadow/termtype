@@ -1,8 +1,8 @@
-/** Seconds remaining, shown only while a test is running (space is always reserved). */
-export function LiveCounter({ running, remaining }: { running: boolean; remaining: number }) {
+/** Seconds left (timed modes) or `completed/total` words, shown while a test runs. Space is always reserved. */
+export function LiveCounter({ text }: { text: string | null }) {
   return (
-    <div data-testid="live-counter" className="h-8 text-2xl text-accent" aria-live="off">
-      {running ? remaining : null}
+    <div data-testid="live-counter" className="h-8 text-2xl text-accent tabular-nums" aria-live="off">
+      {text}
     </div>
   );
 }

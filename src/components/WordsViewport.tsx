@@ -99,7 +99,7 @@ export function WordsViewport({ words, wordIndex, blinking, blurred }: WordsView
   return (
     <div
       data-testid="words-viewport"
-      className={`relative h-36 overflow-hidden text-[1.6rem] leading-12 transition-[filter] duration-200 ${
+      className={`relative h-36 overflow-hidden text-[1.25rem] leading-12 sm:text-[1.6rem] transition-[filter] duration-200 ${
         blurred ? "blur-[3px]" : ""
       }`}
     >

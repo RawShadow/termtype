@@ -15,6 +15,18 @@
   --color-*: initial;
 
   --animate-caret-blink: caret-blink 1s step-end infinite;
+  --animate-fade-in: fade-in 220ms ease-out both;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
 
   @keyframes caret-blink {
     0%,

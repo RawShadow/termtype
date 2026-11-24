@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ENGLISH_200 } from "@/lib/words/english-200";
-import { generateWords, nextRandom } from "./words";
+import { generateWords } from "./words";
+import { nextRandom } from "./random";
 
 describe("ENGLISH_200", () => {
   it("has 200 unique lowercase words", () => {
