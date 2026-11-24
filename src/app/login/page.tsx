@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
 import { AccountProvider } from "@/components/account/AccountProvider";
 import { AuthForm } from "@/components/account/AuthForm";
@@ -30,7 +31,10 @@ function LoginPanel({ children }: { children: ReactNode }) {
   );
 }
 
+/** Request-time part: reads the session (which checks the clock), so it renders inside <Suspense>. */
 async function LoginContent({ searchParams }: { searchParams: SearchParams }) {
+  // Stop prerendering here: everything below depends on the incoming request.
+  await connection();
   const params = await searchParams;
   const next = safeNextPath(first(params.next));
   const account = await getAccount();

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense, type ReactNode } from "react";
 import { AccountProvider } from "@/components/account/AccountProvider";
 import { RecentRuns } from "@/components/results/RecentRuns";
@@ -91,7 +92,10 @@ function ProfileView({ account, stats, recent }: { account: Account; stats: Prof
   );
 }
 
+/** Request-time part: reads the session (which checks the clock), so it renders inside <Suspense>. */
 async function ProfileContent() {
+  // Stop prerendering here: everything below depends on the incoming request.
+  await connection();
   const account = await getAccount();
   if (!account) redirect("/login?next=/profile");
 
