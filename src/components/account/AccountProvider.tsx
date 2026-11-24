@@ -109,12 +109,10 @@ export function AccountProvider({ account, children }: { account: Account | null
 
   const syncOthers = useCallback(
     async (runs: GuestRun[]) => {
-      const supabase = createClient();
-      if (!supabase) return;
       showToast({ message: `syncing ${runs.length} run${runs.length === 1 ? "" : "s"}...` }, false);
       const saved: string[] = [];
       const report = await syncRuns(runs, async (run) => {
-        const { outcome } = await submitRun(supabase, run);
+        const { outcome } = await submitRun(run);
         if (outcome === "saved") saved.push(run.id);
         return outcome;
       });
@@ -129,9 +127,7 @@ export function AccountProvider({ account, children }: { account: Account | null
   // Once signed in with a username: save the run the user asked to save, then
   // offer to sync any other guest runs.
   useEffect(() => {
-    if (!account?.username || syncedFor.current === account.userId) return;
-    const supabase = createClient();
-    if (!supabase) return;
+    if (!account?.username || syncedFor.current === account.userId || !configured) return;
     syncedFor.current = account.userId;
     const userId = account.userId;
 
@@ -142,7 +138,7 @@ export function AccountProvider({ account, children }: { account: Account | null
 
       let lead = "";
       if (plan.pending) {
-        const result = await submitRun(supabase, plan.pending);
+        const result = await submitRun(plan.pending);
         if (result.outcome === "saved") markSynced([plan.pending.id]);
         if (result.outcome !== "error") forgetGuestRuns([plan.pending.id]);
         lead = result.outcome === "saved" ? "run saved to your profile" : `run not saved: ${result.message}`;
@@ -173,7 +169,7 @@ export function AccountProvider({ account, children }: { account: Account | null
         showToast({ message: lead, tone: lead.startsWith("run saved") ? "info" : "error" });
       }
     })();
-  }, [account, router, showToast, syncOthers, markSynced]);
+  }, [account, configured, router, showToast, syncOthers, markSynced]);
 
   useEffect(() => () => clearTimeout(toastTimer.current), []);
 

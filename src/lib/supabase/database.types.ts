@@ -91,7 +91,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      submit_test_result: {
+      get_leaderboard: {
+        Args: {
+          p_limit?: number
+          p_mode: string
+          p_sub_mode: string
+          p_user_id?: string
+          p_window?: string
+        }
+        Returns: {
+          accuracy: number
+          created_at: string
+          rank: number
+          raw_wpm: number
+          user_id: string
+          username: string
+          wpm: number
+        }[]
+      }
+      record_test_result: {
         Args: {
           p_accuracy: number
           p_client_run_id: string
@@ -102,6 +120,7 @@ export type Database = {
           p_played_at?: string
           p_raw_wpm: number
           p_sub_mode: string
+          p_user_id: string
           p_wpm: number
         }
         Returns: {
@@ -137,4 +156,5 @@ export type Database = {
 
 export type TestResultRow = Database["public"]["Tables"]["test_results"]["Row"]
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"]
-export type SubmitTestResultArgs = Database["public"]["Functions"]["submit_test_result"]["Args"]
+export type RecordTestResultArgs = Database["public"]["Functions"]["record_test_result"]["Args"]
+export type LeaderboardRow = Database["public"]["Functions"]["get_leaderboard"]["Returns"][number]

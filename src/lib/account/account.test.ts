@@ -4,8 +4,8 @@ import type { TestResultRow } from "@/lib/supabase/database.types";
 import { loginErrorMessage, validateCredentials } from "./credentials";
 import { formatDuration, PB_CATEGORIES, profileStats } from "./profileStats";
 import { resolveSaveState, type SaveStateInput } from "./saveState";
-import { rowToRun, saveErrorMessage, toSubmitArgs } from "./submit";
-import { describeSyncReport, isRejection, planSync, syncableRuns, syncRuns } from "./sync";
+import { rowToRun } from "./submit";
+import { describeSyncReport, planSync, syncableRuns, syncRuns } from "./sync";
 import { suggestUsername, usernameError, USERNAME_PATTERN } from "./username";
 
 function run(patch: Partial<GuestRun> = {}): GuestRun {
@@ -80,39 +80,7 @@ describe("credentials", () => {
   });
 });
 
-describe("toSubmitArgs", () => {
-  it("maps a guest run to the database function's arguments", () => {
-    expect(toSubmitArgs(run({ durationSec: 15.84, mode: "words", subMode: "25" }))).toEqual({
-      p_client_run_id: "r1",
-      p_mode: "words",
-      p_sub_mode: "25",
-      p_modifiers: { punct: false, nums: false, strictness: "normal" },
-      p_wpm: 80,
-      p_raw_wpm: 85,
-      p_accuracy: 97.5,
-      p_consistency: 80,
-      p_duration_sec: 16,
-      p_played_at: "2026-11-24T12:00:00.000Z",
-    });
-  });
-
-  it("never sends a zero duration", () => {
-    expect(toSubmitArgs(run({ mode: "quote", subMode: "short", durationSec: 0.3 }))?.p_duration_sec).toBe(1);
-  });
-
-  it("drops punct/nums for modes they don't apply to", () => {
-    const args = toSubmitArgs(
-      run({ mode: "code", subMode: "code_30", modifiers: { punct: true, nums: true, strictness: "expert" } }),
-    );
-    expect(args?.p_modifiers).toEqual({ punct: false, nums: false, strictness: "expert" });
-  });
-
-  it("refuses failed runs", () => {
-    expect(toSubmitArgs(run({ failReason: "master" }))).toBeNull();
-  });
-});
-
-describe("rowToRun / saveErrorMessage", () => {
+describe("rowToRun", () => {
   it("reads a saved row back into a run summary", () => {
     expect(rowToRun(row({ accuracy: 97.5, modifiers: { punct: true, nums: false, strictness: "master" } }))).toEqual({
       id: "r1",
@@ -131,15 +99,6 @@ describe("rowToRun / saveErrorMessage", () => {
     const r = rowToRun(row({ modifiers: null, mode: "zen" }));
     expect(r.modifiers).toEqual({ punct: false, nums: false, strictness: "normal" });
     expect(r.mode).toBe("time");
-  });
-
-  it("gives short messages for save errors", () => {
-    expect(saveErrorMessage({ code: "23514", message: "violates check" })).toBe("values out of range");
-    expect(saveErrorMessage({ code: "28000" })).toBe("sign in again");
-    expect(saveErrorMessage({ code: "22023", message: "duration does not match the test length" })).toBe(
-      "duration does not match the test length",
-    );
-    expect(saveErrorMessage(null)).toBe("unknown error");
   });
 });
 
@@ -165,13 +124,6 @@ describe("guest sync", () => {
     expect(report).toEqual({ saved: 1, rejected: 1, failed: 1, handledIds: ["a", "c"] });
     expect(describeSyncReport(report)).toBe("synced 1 run · 1 rejected · 1 failed - try again later");
     expect(describeSyncReport({ saved: 3, rejected: 0, failed: 0, handledIds: [] })).toBe("synced 3 runs");
-  });
-
-  it("treats bad-data errors as rejections, not retries", () => {
-    expect(isRejection("22023")).toBe(true);
-    expect(isRejection("23514")).toBe(true);
-    expect(isRejection("28000")).toBe(false);
-    expect(isRejection(undefined)).toBe(false);
   });
 });
 

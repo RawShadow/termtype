@@ -25,7 +25,7 @@ export function Header({ className = "", onReset }: HeaderProps) {
   };
 
   return (
-    <header data-testid="header" className={`flex items-center justify-between gap-4 ${className}`}>
+    <header data-testid="header" className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-2 ${className}`}>
       <Link
         href="/"
         onClick={handleClick}
@@ -33,9 +33,13 @@ export function Header({ className = "", onReset }: HeaderProps) {
       >
         termtype<span className="text-accent">:~$</span>
       </Link>
-      <nav className="flex items-center gap-3 text-sm text-text-muted">
-        <Link href="/" onClick={handleClick} className={linkClass}>
+      <nav className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-sm text-text-muted">
+        {/* The brand already links to the test, so [test] is dropped on phones to fit. */}
+        <Link href="/" onClick={handleClick} className={`${linkClass} hidden sm:inline`}>
           [test]
+        </Link>
+        <Link href="/leaderboard" data-testid="header-leaderboard" className={linkClass}>
+          [leaderboard]
         </Link>
         {ctx?.configured &&
           (account ? (

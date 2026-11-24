@@ -1,21 +1,41 @@
+import { toSubmission } from "@/lib/anticheat/submission";
 import type { GuestRun } from "@/lib/history/guestRuns";
 import type { TypedSupabaseClient } from "@/lib/supabase/client";
-import { rowToRun, saveErrorMessage, toSubmitArgs, type RunSummary } from "./submit";
-import { isRejection, type SubmitOutcome } from "./sync";
+import { rowToRun, type RunSummary } from "./submit";
+import type { SubmitOutcome } from "./sync";
 
 export interface SubmitResult {
   outcome: SubmitOutcome;
   message: string | null;
 }
 
-/** Saves one run through the validating `submit_test_result` function. */
-export async function submitRun(supabase: TypedSupabaseClient, run: GuestRun): Promise<SubmitResult> {
-  const args = toSubmitArgs(run);
-  if (!args) return { outcome: "rejected", message: "failed runs aren't saved" };
+/** Short messages for non-success responses from /api/results. */
+const STATUS_MESSAGES: Record<number, string> = {
+  401: "sign in again",
+  403: "request blocked",
+  409: "choose a username first",
+  503: "saving is unavailable right now",
+};
+
+/**
+ * Saves one run through `POST /api/results`, which validates it server-side.
+ * Rejected = the server will never accept this run; error = try again later.
+ */
+export async function submitRun(run: GuestRun, fetchImpl: typeof fetch = fetch): Promise<SubmitResult> {
+  const submission = toSubmission(run);
+  if (!submission) return { outcome: "rejected", message: "failed runs aren't saved" };
   try {
-    const { error } = await supabase.rpc("submit_test_result", args);
-    if (!error) return { outcome: "saved", message: null };
-    return { outcome: isRejection(error.code) ? "rejected" : "error", message: saveErrorMessage(error) };
+    const res = await fetchImpl("/api/results", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(submission),
+    });
+    if (res.ok) return { outcome: "saved", message: null };
+    const body = (await res.json().catch(() => ({}))) as { error?: string; reasons?: string[] };
+    if ([400, 413, 415, 422].includes(res.status)) {
+      return { outcome: "rejected", message: body.reasons?.[0] ?? body.error ?? "invalid run" };
+    }
+    return { outcome: "error", message: STATUS_MESSAGES[res.status] ?? "could not save - try again" };
   } catch {
     return { outcome: "error", message: "could not reach the server" };
   }

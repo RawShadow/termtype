@@ -198,7 +198,9 @@ export function ResultsView({ state, onNext, onRepeat, submitResult }: ResultsVi
               save.kind === "not-saved" ? "text-error" : save.kind === "saved" ? "text-accent" : "text-text-muted"
             }`}
           >
-            {save.kind === "not-saved" ? `not saved: ${save.message}` : SAVE_TEXT[save.kind]}
+            {save.kind === "not-saved"
+              ? `not saved: ${save.message}${guestCurrent ? " - kept in this browser" : ""}`
+              : SAVE_TEXT[save.kind]}
             {save.kind === "saved" && (
               <Link href="/profile" className="ml-2 text-text-muted hover:text-text-primary">
                 [view profile]

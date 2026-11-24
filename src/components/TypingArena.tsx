@@ -7,7 +7,7 @@ import { runIdOf, toGuestRun } from "@/lib/history/guestRuns";
 import { recordGuestRun } from "@/lib/history/guestRunsStore";
 import { randomSeed } from "@/lib/random";
 import { saveConfig } from "@/lib/settings";
-import { createClient } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { useAccount } from "./account/AccountProvider";
 import { ArenaFrame } from "./ArenaFrame";
 import { CommandPalette } from "./CommandPalette";
@@ -166,15 +166,17 @@ export function TypingArena({ initialSeed, initialConfig }: TypingArenaProps) {
     if (savedRunId.current === id) return;
     savedRunId.current = id;
     const run = toGuestRun(state, getResult(state), Date.now());
-    const supabase = account?.username ? createClient() : null;
-    if (!supabase) {
+    if (!account?.username || !isSupabaseConfigured()) {
       recordGuestRun(run);
       return;
     }
     if (run.failReason) return;
-    void submitRun(supabase, run).then((result) =>
-      setSaveResults((prev) => ({ ...prev, [id]: result })),
-    );
+    void submitRun(run).then((result) => {
+      // Transient failure (offline, server key missing): keep the run in this
+      // browser so the sign-in sync can save it later instead of losing it.
+      if (result.outcome === "error") recordGuestRun(run);
+      setSaveResults((prev) => ({ ...prev, [id]: result }));
+    });
   }, [state, account]);
 
   // Mount: grab focus, leave focus mode on real mouse movement, and route

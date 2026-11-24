@@ -58,8 +58,3 @@ export function describeSyncReport(report: SyncReport): string {
   if (report.failed) parts.push(`${report.failed} failed - try again later`);
   return parts.join(" · ");
 }
-
-/** Postgres error classes that mean "this run will never be accepted" (bad data), not a transient failure. */
-export function isRejection(code: string | undefined): boolean {
-  return code === "22023" || code === "23514" || code === "22P02";
-}
