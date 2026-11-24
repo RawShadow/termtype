@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* TermType design tokens — the only colors allowed in the app (see CLAUDE.md). */
+:root {
+  --bg-primary: #2c3333;
+  --bg-surface: #395b64;
+  --text-muted: #62848d;
+  --accent: #a5c9ca;
+  --text-primary: #e7f6f2;
+  --error: #e06c75;
+}
+
+/* Drop Tailwind's default palette so only theme tokens can be used. */
+@theme {
+  --color-*: initial;
+
+  --animate-caret-blink: caret-blink 1s step-end infinite;
+
+  @keyframes caret-blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+@theme inline {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-surface: var(--bg-surface);
+  --color-text-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-text-primary: var(--text-primary);
+  --color-error: var(--error);
+
+  --font-sans: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+::selection {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
