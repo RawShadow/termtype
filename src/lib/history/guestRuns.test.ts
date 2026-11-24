@@ -8,6 +8,7 @@ import {
   loadGuestRuns,
   MAX_GUEST_RUNS,
   personalBest,
+  removeGuestRuns,
   toGuestRun,
   type GuestRun,
   type StorageLike,
@@ -75,6 +76,13 @@ describe("guest run storage", () => {
     expect(runs).toHaveLength(MAX_GUEST_RUNS);
     expect(runs[0].id).toBe("r12");
     expect(runs[9].id).toBe("r3");
+  });
+
+  it("removes synced runs by id", () => {
+    const storage = memoryStorage();
+    for (const id of ["a", "b", "c"]) addGuestRun(storage, run({ id }));
+    expect(removeGuestRuns(storage, ["a", "c", "missing"]).map((r) => r.id)).toEqual(["b"]);
+    expect(loadGuestRuns(storage).map((r) => r.id)).toEqual(["b"]);
   });
 
   it("replaces a run with the same id instead of duplicating it", () => {

@@ -1,8 +1,9 @@
 "use client";
 
-import type { GuestRun } from "@/lib/history/guestRuns";
+import type { RunSummary } from "@/lib/account/submit";
+import { useIsClient } from "@/lib/useIsClient";
 
-function runLabel(run: GuestRun): string {
+function runLabel(run: RunSummary): string {
   const value = run.mode === "code" ? run.subMode.replace("code_", "") : run.subMode;
   const parts = [`${run.mode} ${value}`];
   if (run.modifiers.punct && (run.mode === "time" || run.mode === "words")) parts.push("punct");
@@ -17,20 +18,28 @@ function timeOf(createdAt: number): string {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** The guest's last runs (stored in localStorage), newest first, with the current one highlighted. */
-export function RecentRuns({
-  runs,
-  currentId,
-  currentIsPb,
-}: {
-  runs: readonly GuestRun[];
-  currentId: string;
-  currentIsPb: boolean;
-}) {
+const TITLES = {
+  browser: "recent runs (saved in this browser)",
+  profile: "recent runs (saved to your profile)",
+} as const;
+
+interface RecentRunsProps {
+  runs: readonly RunSummary[];
+  /** Highlighted run, if any. */
+  currentId?: string;
+  currentIsPb?: boolean;
+  source?: keyof typeof TITLES;
+  title?: string;
+}
+
+/** Recent runs, newest first, with the current one highlighted. */
+export function RecentRuns({ runs, currentId, currentIsPb = false, source = "browser", title }: RecentRunsProps) {
+  // Times are shown in the viewer's time zone, so render them only in the browser.
+  const isClient = useIsClient();
   if (runs.length === 0) return null;
   return (
-    <div data-testid="recent-runs" className="w-full text-sm">
-      <div className="mb-2 text-xs text-text-muted">recent runs (saved in this browser)</div>
+    <div data-testid="recent-runs" data-source={source} className="w-full text-sm">
+      <div className="mb-2 text-xs text-text-muted">{title ?? TITLES[source]}</div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[28rem] text-left tabular-nums">
           <thead className="bg-bg-surface text-xs text-text-primary">
@@ -55,7 +64,7 @@ export function RecentRuns({
                   data-current={current || undefined}
                   className={`border-b border-bg-surface/60 ${current ? "text-text-primary" : "text-text-muted"}`}
                 >
-                  <td className="px-3 py-1.5">{timeOf(run.createdAt)}</td>
+                  <td className="px-3 py-1.5">{isClient ? timeOf(run.createdAt) : "--"}</td>
                   <td className="px-3 py-1.5">{runLabel(run)}</td>
                   <td className="px-3 py-1.5 text-right">{run.wpm}</td>
                   <td className="px-3 py-1.5 text-right">{run.accuracy}%</td>

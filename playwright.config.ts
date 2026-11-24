@@ -1,4 +1,8 @@
+import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
+
+// Optional credentials for the gated sign-in tests (e2e/auth.spec.ts).
+if (existsSync(".env.test.local")) process.loadEnvFile(".env.test.local");
 
 const PORT = 3123;
 

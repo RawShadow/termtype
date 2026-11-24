@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { createInitialState, engineReducer, getResult, type TestConfig } from "@/lib/engine";
+import { submitRun, type SubmitResult } from "@/lib/account/runs";
 import { runIdOf, toGuestRun } from "@/lib/history/guestRuns";
 import { recordGuestRun } from "@/lib/history/guestRunsStore";
 import { randomSeed } from "@/lib/random";
 import { saveConfig } from "@/lib/settings";
+import { createClient } from "@/lib/supabase/client";
+import { useAccount } from "./account/AccountProvider";
 import { ArenaFrame } from "./ArenaFrame";
 import { CommandPalette } from "./CommandPalette";
 import { LiveCounter } from "./LiveCounter";
@@ -41,6 +44,8 @@ export function TypingArena({ initialSeed, initialConfig }: TypingArenaProps) {
   const paletteOpenRef = useRef(false);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const savedRunId = useRef<string | null>(null);
+  const [saveResults, setSaveResults] = useState<Record<string, SubmitResult>>({});
+  const account = useAccount()?.account ?? null;
 
   const resetUi = useCallback(() => {
     tabArmed.current = false;
@@ -152,14 +157,25 @@ export function TypingArena({ initialSeed, initialConfig }: TypingArenaProps) {
     return () => clearInterval(id);
   }, [state.status]);
 
-  // Save each finished test to the guest history exactly once.
+  // Save each finished test exactly once: to the account when signed in with
+  // a username (failed strict runs are not saved), otherwise to the local
+  // guest history so it can be synced later.
   useEffect(() => {
     if (state.status !== "finished") return;
     const id = runIdOf(state);
     if (savedRunId.current === id) return;
     savedRunId.current = id;
-    recordGuestRun(toGuestRun(state, getResult(state), Date.now()));
-  }, [state]);
+    const run = toGuestRun(state, getResult(state), Date.now());
+    const supabase = account?.username ? createClient() : null;
+    if (!supabase) {
+      recordGuestRun(run);
+      return;
+    }
+    if (run.failReason) return;
+    void submitRun(supabase, run).then((result) =>
+      setSaveResults((prev) => ({ ...prev, [id]: result })),
+    );
+  }, [state, account]);
 
   // Mount: grab focus, leave focus mode on real mouse movement, and route
   // keystrokes back to the typing area if focus wandered off.
@@ -173,7 +189,8 @@ export function TypingArena({ initialSeed, initialConfig }: TypingArenaProps) {
       if (moved) setFocusMode(false);
     };
     const onWindowKeyDown = (e: KeyboardEvent) => {
-      if (paletteOpenRef.current) return;
+      // Dialogs (palette, sign-in, username) own the keyboard while open.
+      if (paletteOpenRef.current || document.querySelector('[aria-modal="true"]')) return;
       const el = containerRef.current;
       if (!el || el.contains(document.activeElement) || MODIFIER_KEYS.has(e.key)) return;
       const onControl = e.target instanceof Element && e.target.closest(CONTROL_SELECTOR) !== null;
@@ -220,7 +237,12 @@ export function TypingArena({ initialSeed, initialConfig }: TypingArenaProps) {
           className="relative cursor-default outline-none"
         >
           {finished ? (
-            <ResultsView state={state} onNext={() => restart()} onRepeat={repeat} />
+            <ResultsView
+              state={state}
+              onNext={() => restart()}
+              onRepeat={repeat}
+              submitResult={saveResults[runIdOf(state)]}
+            />
           ) : (
             <>
               <LiveCounter text={counter} />

@@ -106,6 +106,18 @@ export function addGuestRun(storage: StorageLike, run: GuestRun): GuestRun[] {
   return runs;
 }
 
+/** Removes runs by id (e.g. after syncing them to an account) and returns what's left. */
+export function removeGuestRuns(storage: StorageLike, ids: readonly string[]): GuestRun[] {
+  const drop = new Set(ids);
+  const runs = loadGuestRuns(storage).filter((r) => !drop.has(r.id));
+  try {
+    storage.setItem(GUEST_RUNS_KEY, JSON.stringify(runs));
+  } catch {
+    // Storage blocked: nothing to clean up.
+  }
+  return runs;
+}
+
 /** Best non-failed run for a mode + sub-mode (highest WPM, then accuracy, then earliest). */
 export function personalBest(
   runs: readonly GuestRun[],

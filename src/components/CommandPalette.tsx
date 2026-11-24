@@ -103,14 +103,14 @@ export function CommandPalette({ config, onApply, onRestart, onRepeat, onClose }
             aria-controls="palette-options"
             aria-activedescendant={active >= 0 ? `palette-option-${results[active].id}` : undefined}
             placeholder="type a command, or run --mode words --val 25"
-            className="w-full bg-transparent text-text-primary caret-accent outline-none placeholder:text-text-muted"
+            className="w-full bg-transparent text-text-primary caret-accent outline-none placeholder:text-text-primary/50"
           />
         </label>
 
         {parsed ? (
           <div data-testid="palette-run-preview" className="px-4 py-3">
             {parsed.ok ? (
-              <span className="text-text-muted">
+              <span className="text-text-primary/70">
                 enter to run <span className="text-accent">{describeConfig(parsed.config)}</span>
               </span>
             ) : (
@@ -119,7 +119,7 @@ export function CommandPalette({ config, onApply, onRestart, onRepeat, onClose }
           </div>
         ) : (
           <ul ref={listRef} id="palette-options" role="listbox" className="max-h-72 overflow-y-auto py-1">
-            {results.length === 0 && <li className="px-4 py-2 text-text-muted">no matching command</li>}
+            {results.length === 0 && <li className="px-4 py-2 text-text-primary/70">no matching command</li>}
             {results.map((command, i) => (
               <li
                 key={command.id}
@@ -141,13 +141,13 @@ export function CommandPalette({ config, onApply, onRestart, onRepeat, onClose }
                   <span className="inline-block w-3 text-accent">{isActive(config, command) ? "*" : ""}</span>
                   {command.label}
                 </span>
-                <span className="truncate text-xs text-text-muted">{command.hint}</span>
+                <span className="truncate text-xs text-text-primary/70">{command.hint}</span>
               </li>
             ))}
           </ul>
         )}
 
-        <div className="flex gap-4 border-t border-bg-primary/60 px-4 py-2 text-xs text-text-muted">
+        <div className="flex gap-4 border-t border-bg-primary/60 px-4 py-2 text-xs text-text-primary/70">
           <span>↑↓ select</span>
           <span>enter run</span>
           <span>esc close</span>

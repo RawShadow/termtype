@@ -4,6 +4,7 @@ import {
   GUEST_RUNS_KEY,
   loadGuestRuns,
   MAX_GUEST_RUNS,
+  removeGuestRuns,
   type GuestRun,
   type StorageLike,
 } from "./guestRuns";
@@ -58,6 +59,20 @@ export function recordGuestRun(run: GuestRun): void {
   cache = s
     ? addGuestRun(s, run)
     : [run, ...getSnapshot().filter((r) => r.id !== run.id)].slice(0, MAX_GUEST_RUNS);
+  emit();
+}
+
+/** Current guest runs (outside React). */
+export function readGuestRuns(): GuestRun[] {
+  return getSnapshot();
+}
+
+/** Removes synced runs from localStorage and notifies subscribers. */
+export function forgetGuestRuns(ids: readonly string[]): void {
+  if (ids.length === 0) return;
+  const s = storage();
+  const drop = new Set(ids);
+  cache = s ? removeGuestRuns(s, ids) : getSnapshot().filter((r) => !drop.has(r.id));
   emit();
 }
 
